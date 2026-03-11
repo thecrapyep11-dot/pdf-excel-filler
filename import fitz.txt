@@ -1,0 +1,152 @@
+import fitz
+import pandas as pd
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import re
+import os
+
+# Koordinat sesuai memori
+X = 917
+Y = [132,146,163,183,202,226]
+
+def format_number(value):
+    try:
+        value = str(value).replace(".", "").replace(",", "")
+        return f"{int(float(value)):,}".replace(",", ".")
+    except:
+        return None
+
+
+def process_pdf_with_excel(pdf_path, excel_path):
+
+    try:
+        df = pd.read_excel(excel_path, dtype=str)
+        df.iloc[:,0] = df.iloc[:,0].astype(str).str.strip()
+    except Exception as e:
+        messagebox.showerror("Error", f"Gagal membaca Excel:\n{e}")
+        return
+
+    try:
+        doc = fitz.open(pdf_path)
+    except Exception as e:
+        messagebox.showerror("Error", f"Gagal membuka PDF:\n{e}")
+        return
+
+    pages_processed = 0
+    values_inserted = 0
+
+    for page in doc:
+
+        pages_processed += 1
+        text = page.get_text()
+
+        match = re.search(r"CIF\s*KREDIT\s*(\d{10})", text)
+
+        if not match:
+            continue
+
+        cif = match.group(1).strip()
+
+        row = df[df.iloc[:,0] == cif]
+
+        if row.empty:
+            continue
+
+        for i in range(6):
+
+            if i+1 < len(row.columns):
+
+                value = row.iloc[0, i+1]
+
+                if pd.notna(value) and str(value).strip() != "":
+
+                    formatted = format_number(value)
+
+                    if formatted:
+
+                        page.insert_text(
+                            (X, Y[i]),
+                            formatted,
+                            fontsize=10,
+                            fontname="helv"
+                        )
+
+                        values_inserted += 1
+
+    output_path = pdf_path.replace(".pdf","_filled.pdf")
+
+    try:
+        doc.save(output_path)
+        doc.close()
+    except Exception as e:
+        messagebox.showerror("Error", f"Gagal menyimpan PDF:\n{e}")
+        return
+
+    messagebox.showinfo(
+        "Selesai",
+        f"PDF berhasil diproses\n\nHalaman diproses: {pages_processed}\nNilai dimasukkan: {values_inserted}\n\nOutput:\n{output_path}"
+    )
+
+
+def browse_pdf():
+    file_path = filedialog.askopenfilename(
+        filetypes=[("PDF Files","*.pdf")]
+    )
+    pdf_entry.delete(0, tk.END)
+    pdf_entry.insert(0, file_path)
+
+
+def browse_excel():
+    file_path = filedialog.askopenfilename(
+        filetypes=[("Excel Files","*.xlsx")]
+    )
+    excel_entry.delete(0, tk.END)
+    excel_entry.insert(0, file_path)
+
+
+def start_process():
+
+    pdf_path = pdf_entry.get()
+    excel_path = excel_entry.get()
+
+    if not pdf_path or not excel_path:
+        messagebox.showwarning(
+            "Peringatan",
+            "Silakan pilih file PDF dan Excel terlebih dahulu"
+        )
+        return
+
+    process_pdf_with_excel(pdf_path, excel_path)
+
+
+# GUI
+root = tk.Tk()
+root.title("PDF Excel Auto Filler")
+root.geometry("520x180")
+
+tk.Label(root, text="File PDF").grid(row=0, column=0, padx=10, pady=10)
+
+pdf_entry = tk.Entry(root, width=50)
+pdf_entry.grid(row=0, column=1)
+
+tk.Button(root, text="Browse", command=browse_pdf).grid(row=0, column=2)
+
+
+tk.Label(root, text="File Excel").grid(row=1, column=0, padx=10, pady=10)
+
+excel_entry = tk.Entry(root, width=50)
+excel_entry.grid(row=1, column=1)
+
+tk.Button(root, text="Browse", command=browse_excel).grid(row=1, column=2)
+
+
+tk.Button(
+    root,
+    text="PROSES",
+    command=start_process,
+    width=20,
+    height=2
+).grid(row=2, column=1, pady=20)
+
+
+root.mainloop()
